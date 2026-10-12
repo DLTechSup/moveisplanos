@@ -1,10 +1,7 @@
+node_modules/
+app/dist/
+app/release/
 __pycache__/
 *.pyc
-venv/
 .venv/
-build/
-dist/
-*.spec
-saida/
-node_modules/
-web/dist/
+venv/

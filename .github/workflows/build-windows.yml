@@ -1,0 +1,51 @@
+name: Instalador do Windows
+
+on:
+  push:
+    branches: ['claude/**', main, master]
+    paths: ['app/**', '.github/workflows/build-windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Instalar dependências
+        run: npm ci
+      - name: Testes
+        run: npm test
+      - name: Gerar instalador e versão portátil
+        run: npm run dist:win
+      - name: Guardar arquivos gerados
+        uses: actions/upload-artifact@v4
+        with:
+          name: projeta-moveis-windows
+          path: |
+            app/release/*.exe
+      - name: Publicar (release com o instalador)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: instalador-${{ github.run_number }}
+          name: Projeta Móveis — instalador para Windows (build ${{ github.run_number }})
+          body: |
+            Baixe **Instalador-Projeta-Moveis-*.exe**, execute e siga as telas (pt-BR).
+            Se o Windows mostrar "O Windows protegeu seu computador", clique em **Mais informações → Executar assim mesmo**
+            (o instalador ainda não tem assinatura digital paga).
+
+            Também há a versão **Portátil** (um único .exe que não precisa instalar).
+          files: |
+            app/release/*.exe
+          prerelease: false
+          make_latest: true
