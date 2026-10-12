@@ -23,6 +23,10 @@ Para gerar um **`.exe`** único: rode `iniciar.bat` uma vez e depois **`gerar_ex
 O catálogo fica em `%APPDATA%\ProjetaMoveis\catalogo.json` (criado na primeira execução com os valores padrão;
 os **preços vêm em branco** para você preencher).
 
+## Versão React (navegador)
+
+A pasta [`web/`](web/README.md) tem a mesma ferramenta em React + TypeScript, que roda no navegador (`cd web && npm install && npm run dev`).
+
 ## Desenvolvimento
 
 ```
