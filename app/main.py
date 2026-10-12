@@ -7,8 +7,15 @@ from pathlib import Path
 if __package__ in (None, ""):                       # permite `python app/main.py`
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from PySide6.QtCore import QLocale
-from PySide6.QtWidgets import QApplication
+try:
+    from PySide6.QtCore import QLocale
+    from PySide6.QtWidgets import QApplication
+except ModuleNotFoundError:
+    print("\nO PySide6 não está instalado neste Python.\n"
+          "Use o iniciar.bat (ele prepara tudo sozinho) ou rode:\n"
+          "    python -m pip install -r requirements.txt\n"
+          "e depois, na pasta do projeto:  python -m app.main\n")
+    sys.exit(1)
 
 from app.catalogo import Catalogo
 from app.interface.icones import icone_app
