@@ -42,12 +42,12 @@ export function textura(tipo: TipoTextura, cor: string, tam = 192, semente = 1):
   for (let y = 0; y < tam; y++) for (let x = 0; x < tam; x++) {
     let tom: number
     if (tipo === 'madeira') {
-      const anel = y * 0.03 + fbm(x * 0.006, y * 0.012, semente) * 5 + ruido(x * 0.002, y * 0.02, semente + 5) * 1.2
+      const anel = y * 0.055 + fbm(x * 0.004, y * 0.03, semente) * 2.4
       const t = anel - Math.floor(anel)
-      const pulso = Math.pow(Math.sin(Math.PI * t), 1.6)
-      const fibra = fbm(x * 0.12, y * 0.9, semente + 7, 3)
-      const poro = ruido(x * 0.55, y * 3.1, semente + 3) > 0.84 ? 0.86 : 1
-      tom = (0.8 + 0.3 * pulso) * (0.9 + 0.2 * fibra) * poro
+      const pulso = Math.pow(Math.sin(Math.PI * t), 1.3)
+      const fibra = fbm(x * 0.09, y * 1.1, semente + 7, 3)
+      const poro = ruido(x * 0.5, y * 3.4, semente + 3) > 0.86 ? 0.9 : 1
+      tom = (0.88 + 0.16 * pulso) * (0.95 + 0.1 * fibra) * poro
     } else if (tipo === 'hdf') {
       tom = 0.9 + 0.2 * fbm(x * 0.9, y * 0.9, semente + 2, 3) - (hash(x, y, semente) > 0.985 ? 0.2 : 0)
     } else {

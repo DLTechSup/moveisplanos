@@ -1,240 +1,225 @@
-// Motor modular: um móvel de caixa (laterais, tampo, base, fundo) dividido em colunas, e cada coluna em seções
-// (gavetas, portas ou vão aberto). Serve para guarda-roupas, cômodas, armários, estantes, racks, balcões…
+// Motor modular: um móvel de caixa (laterais, tampo, base, fundo) cujo espaço interno é dividido em vãos por um layout
+// em árvore (lado a lado / um sobre o outro). Cada vão é gavetas, portas ou aberto (prateleiras e cabideiro).
+// Serve para guarda-roupas, cômodas, armários, estantes, racks, balcões…
 import * as C from './catalogo'
 import { Folgas } from './folgas'
 import { fmtCm, fmtNum } from './formato'
+import { contem, folhasDe, repartir, resolver } from './layout'
+import type { DivisorR, FolhaR } from './layout'
 import { addPeca, aviso, secaoPadrao } from './tipos'
-import type { Bloco, Catalogo, Coluna, Cota, Projeto, Resultado, Secao } from './tipos'
+import type { Bloco, Catalogo, Cota, DivisorInfo, FolhaInfo, ItemMedida, No, Projeto, Regiao, Resultado, Secao } from './tipos'
+import { ehDivisao } from './tipos'
 import { bloco, blocosCaixa, blocosCorredica, colocarPuxador, distribuir, escolherCorredica, ferragemPuxador, numeroDobradicas,
   peca, pesosGavetas, posicoesDobradicas, r3 } from './comum'
-
-interface SecInfo {
-  sec: Secao; yTop: number; yBot: number; hi: number   // espaço interno
-  fTop: number; fBot: number                           // extensão da frente
-  frente: boolean
-}
 
 export interface Estrutura {
   L: number; H: number; Hm: number; P: number; e: number; f: number; fe: number; y0: number; rod: number; elev: number
   topo_lat: number; ytop_int: number; ybase_int: number; Hi: number
   z_lat0: number; zEnd: number; Dlat: number; Dint: number; frontZ0: number; z_fundo_face: number
-  vaos: number[]; col_x: number[]; rasgo: boolean; r: number; s: number; dist: number
+  rasgo: boolean; r: number; s: number; dist: number
 }
 
-const normalizar = (cols: Coluna[]): Coluna[] => {
-  const base = cols && cols.length ? cols : [{ largura: 0, secoes: [secaoPadrao('aberto')] }]
-  return base.map(c => ({ largura: c.largura || 0, secoes: c.secoes && c.secoes.length ? c.secoes : [secaoPadrao('aberto')] }))
-}
+const layoutValido = (l: No | undefined): No => (l ? l : secaoPadrao('aberto'))
 
 export function calcularModular(p: Projeto, cat: Catalogo, fo: Folgas, res: Resultado): void {
-  const cols = normalizar(p.colunas)
-  const nc = cols.length
   const correr = p.porta_correr >= 2
   const sobreposta = p.frente_tipo === 'sobrepostas' && !correr
-  const E = estrutura(p, fo, res, cols, correr)
+  const E = estrutura(p, fo, res, correr)
   const { e, fe } = E
   const g = fo.valor('entre_frentes')
   const c = fo.valor('contorno_embutida')
   const B = res.blocos
   const temFrente = (s: Secao) => s.tipo === 'gavetas' || (s.tipo === 'portas' && !correr)
 
-  // ---- extensão horizontal das frentes de cada coluna ---------------------------------------------------------------------
-  const frontX: [number, number][] = cols.map((_, k) => {
+  // ---- retângulos dos vãos e tábuas entre eles ------------------------------------------------------------------------------
+  const interior: Regiao = { x: e, y: E.ybase_int, w: E.L - 2 * e, h: E.Hi }
+  const avisosLayout: { nivel: 'erro' | 'aviso'; texto: string }[] = []
+  const raiz = layoutValido(p.layout)
+  const R = resolver(raiz, interior, e, avisosLayout)
+  for (const a of avisosLayout) aviso(res, a.nivel, a.texto)
+  const folhas = R.folhas
+
+  const folhaEm = (x: number, y: number): FolhaR | undefined => folhas.find(f => contem(f.rect, x, y, 0.5))
+  const tem = (f: FolhaR | undefined) => !!f && temFrente(f.no)
+
+  // ---- extensão das frentes de cada vão (sobrepostas: até o meio das tábuas; senão: dentro do vão) -------------------------------
+  const frentes = new Map<FolhaR, Regiao>()
+  for (const f of folhas) {
+    const r = f.rect
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2
+    let xa: number, xb: number, ya: number, yb: number
     if (sobreposta) {
-      const xa = k === 0 ? 0 : E.col_x[k - 1] + E.vaos[k - 1] + e / 2 + g / 2
-      const xb = k === nc - 1 ? E.L : E.col_x[k] + E.vaos[k] + e / 2 - g / 2
-      return [xa, xb]
+      xa = r.x <= e + 0.5 ? 0 : (() => { const n = folhaEm(r.x - e - 1, cy); return tem(n) ? r.x - e / 2 + g / 2 : r.x - e })()
+      xb = r.x + r.w >= E.L - e - 0.5 ? E.L : (() => { const n = folhaEm(r.x + r.w + e + 1, cy); return tem(n) ? r.x + r.w + e / 2 - g / 2 : r.x + r.w + e })()
+      yb = r.y + r.h >= E.ytop_int - 0.5 ? E.topo_lat : (() => { const n = folhaEm(cx, r.y + r.h + e + 1); return tem(n) ? r.y + r.h + e / 2 - g / 2 : r.y + r.h + e })()
+      ya = r.y <= E.ybase_int + 0.5 ? E.y0 + E.rod : (() => { const n = folhaEm(cx, r.y - e - 1); return tem(n) ? r.y - e / 2 + g / 2 : r.y - e })()
+    } else {
+      xa = r.x + c; xb = r.x + r.w - c; ya = r.y + c; yb = r.y + r.h - c
     }
-    return [E.col_x[k] + c, E.col_x[k] + E.vaos[k] - c]
-  })
+    frentes.set(f, { x: xa, y: ya, w: xb - xa, h: yb - ya })
+  }
 
-  // ---- seções (alturas, extensões das frentes) ---------------------------------------------------------------------------
-  const infos: SecInfo[][] = cols.map(col => {
-    const n = col.secoes.length
-    const total = E.Hi - (n - 1) * e
-    const fixos = col.secoes.map(s => (s.altura > 0 ? s.altura * 10 : 0))
-    let somaFix = fixos.reduce((a, b) => a + b, 0)
-    const livres = fixos.filter(v => v <= 0).length
-    if (somaFix > total - livres * 80 && somaFix > 0) {
-      aviso(res, 'aviso', 'As alturas das seções somam mais que a altura interna: foram reduzidas proporcionalmente.')
-      const f = (total - livres * 150) / somaFix
-      for (let i = 0; i < fixos.length; i++) fixos[i] *= Math.max(f, 0.2)
-      somaFix = fixos.reduce((a, b) => a + b, 0)
+  // ---- tábuas: divisórias verticais e prateleiras fixas ---------------------------------------------------------------------------------
+  const infoDiv: DivisorInfo[] = []
+  const larg_div = E.zEnd - E.z_fundo_face
+  for (const d of R.divisores) {
+    infoDiv.push({ caminho: d.caminho, indice: d.indice, dir: d.dir, rect: d.rect, pai: d.pai })
+    if (d.dir === 'v') {
+      const id = addPeca(res, peca(p, 'Divisória', 1, d.rect.h, larg_div, 1, 0))
+      B.push(bloco('Divisória', 'divisoria', d.rect.x, d.rect.y, E.z_fundo_face, e, d.rect.h, larg_div, 'estrutura', 'y', id))
+    } else {
+      const id = addPeca(res, peca(p, 'Prateleira fixa', 1, d.rect.w, E.Dint, 1, 0))
+      const acima = folhaEm(d.rect.x + d.rect.w / 2, d.rect.y + e + 1), abaixo = folhaEm(d.rect.x + d.rect.w / 2, d.rect.y - 1)
+      const semFrente = !tem(acima) && !tem(abaixo)
+      B.push(bloco('Prateleira fixa', 'prateleira', d.rect.x, d.rect.y, E.frontZ0 - E.Dint, d.rect.w, e, E.Dint, 'estrutura', 'x', id, -1,
+        { aberto: !correr && (semFrente || !sobreposta) }))
     }
-    const livreH = livres ? Math.max(total - somaFix, 0) / livres : 0
-    const hs = fixos.map(v => (v > 0 ? v : livreH))
-    const out: SecInfo[] = []
-    let y = E.ytop_int
-    col.secoes.forEach((s, i) => {
-      out.push({ sec: s, yTop: y, yBot: y - hs[i], hi: hs[i], fTop: 0, fBot: 0, frente: temFrente(s) })
-      y -= hs[i] + e
-    })
-    out.forEach((inf, i) => {
-      if (sobreposta) {
-        const prev = out[i - 1], next = out[i + 1]
-        inf.fTop = !prev ? E.topo_lat : prev.frente ? inf.yTop + e / 2 - g / 2 : prev.yBot
-        inf.fBot = !next ? E.y0 + E.rod : next.frente ? next.yTop + e / 2 + g / 2 : next.yTop
-      } else {
-        inf.fTop = inf.yTop - c
-        inf.fBot = inf.yBot + c
-      }
-    })
-    return out
-  })
+  }
 
-  // ---- construção das seções ---------------------------------------------------------------------------------------------------
+  // ---- construção de cada vão ------------------------------------------------------------------------------------------------------------------
   let idxGaveta = 0, idxPorta = 0
   let totalGavetas = 0, totalPuxadores = 0, totalDob = 0, qtdVarao = 0, areaEspelho = 0, nPortas = 0
   const caixaInfo = { larg: 0, larg_int: 0, prof: 0, alts: [] as number[], comp_corredica: 0 }
   const vaosGaveta: number[] = []
-  const frentesCol0: { y: number; h: number }[] = []
   const portaInfo: any = {}
-  const dobradicaQtd = { v: 0 }
-  const slotsCol: { y1: number; y2: number }[][] = cols.map(() => [])
-  let corr: ReturnType<typeof escolherCorredica> | null = null
-  const algumaGaveta = cols.some(cl => cl.secoes.some(s => s.tipo === 'gavetas'))
-  if (algumaGaveta) corr = escolherCorredica(p, cat, fo, res, E.Dint)
-  const algumaPorta = cols.some(cl => cl.secoes.some(s => s.tipo === 'portas')) && !correr
+  const algumaGaveta = folhas.some(f => f.no.tipo === 'gavetas')
+  const corr = algumaGaveta ? escolherCorredica(p, cat, fo, res, E.Dint) : null
+  const infos: FolhaInfo[] = []
+  const mm = (v: number) => v
 
-  cols.forEach((col, k) => {
-    const vao = E.vaos[k]
-    const [xa, xb] = frontX[k]
-    infos[k].forEach((inf, si) => {
-      const s = inf.sec
-      const xCol = E.col_x[k]
+  for (const f of folhas) {
+    const s = f.no
+    const r = f.rect
+    const fr = frentes.get(f)!
+    const info: FolhaInfo = { caminho: f.caminho, tipo: s.tipo, rect: r, frente: temFrente(s) ? fr : null, itens: [], n: 0, slots: [] }
+    infos.push(info)
+    const vao = r.w
+    const itens = info.itens
+    const add = (rotulo: string, qtd: number, w: number, h: number, d: number) => itens.push({ rotulo, qtd, w: mm(w), h: mm(h), d: mm(d) })
 
-      // --- gavetas ---
-      if (s.tipo === 'gavetas' && corr) {
-        const n = Math.max(1, Math.floor(s.n))
-        const pesos = pesosGavetas(s.crescente, n)
-        const fixos = (s.alturas || []).map(v => Number(v) * 10)
-        const altF = distribuir(inf.fTop - inf.fBot - (n - 1) * g, n, pesos, fixos)
-        const somaF = altF.reduce((a, b) => a + b, 0)
-        const wFront = xb - xa
-        const ec = p.caixa_esp
-        const wCaixa = Math.floor(vao - 2 * corr.lat + 1e-6)
-        const prof = corr.comp
-        const { r, s: sb } = E
-        let yF = inf.fTop, ySlot = inf.yTop
-        for (let j = 0; j < n; j++) {
-          const hf = altF[j]
-          const slot = (hf * inf.hi) / somaF
-          yF -= hf
-          const yf = yF
-          const ySlotBase = ySlot - slot
-          ySlot = ySlotBase
-          const topoCx = fo.valor('topo_caixa', { vao_gaveta: slot })
-          const fundoCx = fo.valor('fundo_caixa')
-          let altCx = Math.floor(Math.min(slot - topoCx - fundoCx, hf - 30) + 1e-6)
-          altCx = Math.max(altCx, 1)
-          vaosGaveta.push(slot)
-          if (!caixaInfo.larg) { caixaInfo.larg = wCaixa; caixaInfo.larg_int = wCaixa - 2 * ec; caixaInfo.prof = prof; caixaInfo.comp_corredica = prof }
-          caixaInfo.alts.push(altCx)
-          if (vao < 200) aviso(res, 'aviso', 'Vão da gaveta com menos de 200 mm de largura.')
-          if (altCx < 60) aviso(res, 'aviso', `Caixa de gaveta com altura menor que 60 mm (${altCx} mm).`)
-          if (altCx < corr.cor.altura_min_caixa) aviso(res, 'aviso', `Caixa de gaveta abaixo da altura mínima da corrediça (${corr.cor.altura_min_caixa} mm).`)
-          if (hf < 80) aviso(res, 'aviso', 'Frente de gaveta com altura menor que 80 mm.')
-          const idFrente = addPeca(res, { nome: 'Frente de gaveta', qtd: 1, comp: r3(wFront), larg: r3(hf), esp: p.frente_esp,
-            material: p.frente_material, padrao: p.frente_padrao, fita_c: 2, fita_l: 2, veio: true, obs: '' })
-          const idLat = addPeca(res, { nome: 'Lateral da gaveta', qtd: 2, comp: prof, larg: altCx, esp: ec, material: p.caixa_material,
-            padrao: p.caixa_padrao, fita_c: 1, fita_l: 0, veio: true, obs: '' })
-          const idFt = addPeca(res, { nome: 'Frente/traseira da gaveta', qtd: 2, comp: wCaixa - 2 * ec, larg: altCx, esp: ec,
-            material: p.caixa_material, padrao: p.caixa_padrao, fita_c: 1, fita_l: 0, veio: true, obs: '' })
-          const wFundo = wCaixa - 2 * ec + 2 * (r - sb), pFundo = prof - 2 * ec + 2 * (r - sb)
-          const idFd = addPeca(res, { nome: 'Fundo da gaveta', qtd: 1, comp: r3(wFundo), larg: r3(pFundo), esp: p.fundo_caixa_esp,
-            material: p.fundo_caixa_material, padrao: p.fundo_padrao, fita_c: 0, fita_l: 0, veio: false, obs: 'em rasgo' })
-          const gid = idxGaveta++
-          B.push(bloco(`Frente ${gid + 1}`, 'frente', xa, yf, E.frontZ0, wFront, hf, fe, 'frente', 'x', idFrente, gid))
-          colocarPuxador(p, cat, res, xa, yf, wFront, hf, E.frontZ0 + fe)
-          totalPuxadores++
-          const xC = xCol + (vao - wCaixa) / 2
-          const yCx = ySlotBase + fundoCx
-          B.push(...blocosCaixa(xC, yCx, E.frontZ0 - prof, wCaixa, altCx, prof, ec, r, sb, idLat, idFt, idFd, p.fundo_caixa_esp, gid))
-          B.push(...blocosCorredica(corr.cor.tipo, xC, yCx, E.frontZ0, wCaixa, altCx, corr.lat, prof, gid))
-          if (!res.caixa_modelo.length) {
-            res.caixa_modelo = [...blocosCaixa(0, 0, 0, wCaixa, altCx, prof, ec, r, sb, idLat, idFt, idFd, p.fundo_caixa_esp, 0),
-              ...blocosCorredica(corr.cor.tipo, 0, 0, prof, wCaixa, altCx, corr.lat, prof, 0)]
-          }
-          yF -= g
-          totalGavetas++
+    // --- gavetas ---
+    if (s.tipo === 'gavetas' && corr) {
+      const n = Math.max(1, Math.floor(s.n))
+      info.n = n
+      const pesos = pesosGavetas(s.crescente, n)
+      const fixos = (s.alturas || []).map(v => Number(v) * 10)
+      const altF = distribuir(fr.h - (n - 1) * g, n, pesos, fixos)
+      const somaF = altF.reduce((a, b) => a + b, 0)
+      const ec = p.caixa_esp
+      const wCaixa = Math.floor(vao - 2 * corr.lat + 1e-6)
+      const prof = corr.comp
+      const { r: rr, s: sb } = E
+      let yF = fr.y + fr.h, ySlot = r.y + r.h
+      for (let j = 0; j < n; j++) {
+        const hf = altF[j]
+        const slot = (hf * r.h) / somaF
+        yF -= hf
+        const yf = yF
+        const ySlotBase = ySlot - slot
+        ySlot = ySlotBase
+        const topoCx = fo.valor('topo_caixa', { vao_gaveta: slot })
+        const fundoCx = fo.valor('fundo_caixa')
+        const altCx = Math.max(1, Math.floor(Math.min(slot - topoCx - fundoCx, hf - 30) + 1e-6))
+        vaosGaveta.push(slot)
+        info.slots.push({ y1: ySlotBase, y2: ySlotBase + slot })
+        if (!caixaInfo.larg) { caixaInfo.larg = wCaixa; caixaInfo.larg_int = wCaixa - 2 * ec; caixaInfo.prof = prof; caixaInfo.comp_corredica = prof }
+        caixaInfo.alts.push(altCx)
+        if (vao < 200) aviso(res, 'aviso', 'Vão de gaveta com menos de 200 mm de largura.')
+        if (altCx < 60) aviso(res, 'aviso', `Caixa de gaveta com altura menor que 60 mm (${altCx} mm).`)
+        if (altCx < corr.cor.altura_min_caixa) aviso(res, 'aviso', `Caixa de gaveta abaixo da altura mínima da corrediça (${corr.cor.altura_min_caixa} mm).`)
+        if (hf < 80) aviso(res, 'aviso', 'Frente de gaveta com altura menor que 80 mm.')
+        const idFrente = addPeca(res, { nome: 'Frente de gaveta', qtd: 1, comp: r3(fr.w), larg: r3(hf), esp: p.frente_esp, material: p.frente_material,
+          padrao: p.frente_padrao, fita_c: 2, fita_l: 2, veio: true, obs: '' })
+        const idLat = addPeca(res, { nome: 'Lateral da gaveta', qtd: 2, comp: prof, larg: altCx, esp: ec, material: p.caixa_material, padrao: p.caixa_padrao, fita_c: 1, fita_l: 0, veio: true, obs: '' })
+        const idFt = addPeca(res, { nome: 'Frente/traseira da gaveta', qtd: 2, comp: wCaixa - 2 * ec, larg: altCx, esp: ec, material: p.caixa_material, padrao: p.caixa_padrao, fita_c: 1, fita_l: 0, veio: true, obs: '' })
+        const wFundo = wCaixa - 2 * ec + 2 * (rr - sb), pFundo = prof - 2 * ec + 2 * (rr - sb)
+        const idFd = addPeca(res, { nome: 'Fundo da gaveta', qtd: 1, comp: r3(wFundo), larg: r3(pFundo), esp: p.fundo_caixa_esp, material: p.fundo_caixa_material,
+          padrao: p.fundo_padrao, fita_c: 0, fita_l: 0, veio: false, obs: 'em rasgo' })
+        const gid = idxGaveta++
+        B.push(bloco(`Frente ${gid + 1}`, 'frente', fr.x, yf, E.frontZ0, fr.w, hf, fe, 'frente', 'x', idFrente, gid))
+        colocarPuxador(p, cat, res, fr.x, yf, fr.w, hf, E.frontZ0 + fe)
+        totalPuxadores++
+        const xC = r.x + (vao - wCaixa) / 2
+        const yCx = ySlotBase + fundoCx
+        B.push(...blocosCaixa(xC, yCx, E.frontZ0 - prof, wCaixa, altCx, prof, ec, rr, sb, idLat, idFt, idFd, p.fundo_caixa_esp, gid))
+        B.push(...blocosCorredica(corr.cor.tipo, xC, yCx, E.frontZ0, wCaixa, altCx, corr.lat, prof, gid))
+        if (!res.caixa_modelo.length) {
+          res.caixa_modelo = [...blocosCaixa(0, 0, 0, wCaixa, altCx, prof, ec, rr, sb, idLat, idFt, idFd, p.fundo_caixa_esp, 0),
+            ...blocosCorredica(corr.cor.tipo, 0, 0, prof, wCaixa, altCx, corr.lat, prof, 0)]
         }
+        add(`Frente da gaveta ${j + 1}`, 1, fr.w, hf, fe)
+        add(`Caixa da gaveta ${j + 1} (externa)`, 1, wCaixa, altCx, prof)
+        yF -= g
+        totalGavetas++
       }
+    }
 
-      // --- portas ---
-      if (s.tipo === 'portas' && !correr) {
-        const wf = xb - xa
-        const nDoors = s.portas > 0 ? Math.floor(s.portas) : Math.max(1, Math.ceil(wf / 600 - 1e-9))
-        const larg = (wf - (nDoors - 1) * g) / nDoors
-        const altura = inf.fTop - inf.fBot
-        if (larg > 600) aviso(res, 'aviso', `Porta com ${fmtCm(larg)} cm de largura: acima de 60 cm pode empenar.`)
-        if (altura > 2400) aviso(res, 'aviso', 'Porta com mais de 2,4 m de altura.')
-        const qd = numeroDobradicas(altura)
-        const ys = posicoesDobradicas(altura, qd)
-        const id = addPeca(res, { nome: 'Porta', qtd: nDoors, comp: r3(altura), larg: r3(larg), esp: p.frente_esp,
-          material: p.frente_material, padrao: p.frente_padrao, fita_c: 2, fita_l: 2, veio: true,
-          obs: `${qd} dobradiças${s.espelho ? ' · espelho' : ''}` })
-        for (let i = 0; i < nDoors; i++) {
-          const x = xa + i * (larg + g)
-          const esq = nDoors > 1 ? i < Math.floor((nDoors + 1) / 2) : k < nc / 2
-          B.push(bloco(`Porta ${idxPorta + 1}`, 'porta', x, inf.fBot, E.frontZ0, larg, altura, fe, s.espelho ? 'espelho' : 'frente', 'y', id, idxPorta))
-          colocarPuxador(p, cat, res, x, inf.fBot, larg, altura, E.frontZ0 + fe, true, esq ? x + larg - 45 : x + 45)
-          res.dobradicas.push([...ys])
-          if (!portaInfo.larg) Object.assign(portaInfo, { larg, alt: altura, lado: esq ? 'esq' : 'dir', dobradicas_por_porta: qd })
-          totalDob += qd; totalPuxadores++; nPortas++
-          if (s.espelho) areaEspelho += (larg * altura) / 1e6
-          idxPorta++
+    // --- portas ---
+    if (s.tipo === 'portas' && !correr) {
+      const wf = fr.w
+      const nDoors = s.portas > 0 ? Math.floor(s.portas) : Math.max(1, Math.ceil(wf / 600 - 1e-9))
+      info.n = nDoors
+      const larg = (wf - (nDoors - 1) * g) / nDoors
+      const altura = fr.h
+      if (larg > 600) aviso(res, 'aviso', `Porta com ${fmtCm(larg)} cm de largura: acima de 60 cm pode empenar.`)
+      if (altura > 2400) aviso(res, 'aviso', 'Porta com mais de 2,4 m de altura.')
+      const qd = numeroDobradicas(altura)
+      const ys = posicoesDobradicas(altura, qd)
+      const id = addPeca(res, { nome: 'Porta', qtd: nDoors, comp: r3(altura), larg: r3(larg), esp: p.frente_esp, material: p.frente_material,
+        padrao: p.frente_padrao, fita_c: 2, fita_l: 2, veio: true, obs: `${qd} dobradiças${s.espelho ? ' · espelho' : ''}` })
+      const colIdx = folhas.indexOf(f)
+      for (let i = 0; i < nDoors; i++) {
+        const x = fr.x + i * (larg + g)
+        const esq = nDoors > 1 ? i < Math.floor((nDoors + 1) / 2) : (r.x + r.w / 2) < E.L / 2
+        B.push(bloco(`Porta ${idxPorta + 1}`, 'porta', x, fr.y, E.frontZ0, larg, altura, fe, s.espelho ? 'espelho' : 'frente', 'y', id, idxPorta))
+        colocarPuxador(p, cat, res, x, fr.y, larg, altura, E.frontZ0 + fe, true, esq ? x + larg - 45 : x + 45)
+        res.dobradicas.push([...ys])
+        if (!portaInfo.larg) Object.assign(portaInfo, { larg, alt: altura, lado: esq ? 'esq' : 'dir', dobradicas_por_porta: qd })
+        totalDob += qd; totalPuxadores++; nPortas++
+        if (s.espelho) areaEspelho += (larg * altura) / 1e6
+        idxPorta++
+      }
+      void colIdx
+      add(s.espelho ? 'Porta com espelho' : 'Porta', nDoors, larg, altura, fe)
+    }
+
+    // --- prateleiras soltas e cabideiro (portas / aberto) ---
+    if (s.tipo !== 'gavetas') {
+      const visivel = s.tipo === 'aberto' && !correr
+      const nprat = Math.max(0, Math.floor(s.prateleiras))
+      const pratW = vao - fo.valor('prat_largura')
+      const pratD = E.Dint - fo.valor('prat_recuo')
+      if (nprat > 0 && pratD > 0) {
+        const idp = addPeca(res, peca(p, 'Prateleira', 1, pratW, pratD, 1, 0))
+        const livre = (r.h - nprat * e) / (nprat + 1)
+        for (let j = 1; j <= nprat; j++) {
+          const y = r.y + j * livre + (j - 1) * e
+          B.push(bloco('Prateleira', 'prateleira', r.x + (vao - pratW) / 2, y, E.frontZ0 - E.Dint, pratW, e, pratD, 'estrutura', 'x', idp, -1, { aberto: visivel }))
         }
+        add('Prateleira solta', nprat, pratW, e, pratD)
       }
-
-      // --- conteúdo interno (prateleiras soltas e cabideiro) para portas / aberto ---
-      if (s.tipo !== 'gavetas') {
-        const visivel = s.tipo === 'aberto' && !correr
-        const nprat = Math.max(0, Math.floor(s.prateleiras))
-        const pratW = vao - fo.valor('prat_largura')
-        const pratD = E.Dint - fo.valor('prat_recuo')
-        if (nprat > 0 && pratD > 0) {
-          const idp = addPeca(res, peca(p, 'Prateleira', 1, pratW, pratD, 1, 0))
-          const livre = (inf.hi - nprat * e) / (nprat + 1)
-          for (let j = 1; j <= nprat; j++) {
-            const y = inf.yBot + j * livre + (j - 1) * e
-            B.push(bloco('Prateleira', 'prateleira', E.col_x[k] + (vao - pratW) / 2, y, E.frontZ0 - E.Dint, pratW, e, pratD, 'estrutura', 'x', idp, -1, { aberto: visivel }))
-          }
-        }
-        if (s.cabideiro) {
-          const yr = inf.yTop - 95
-          B.push(bloco('Varão cabideiro', 'cabideiro', E.col_x[k], yr, E.z_fundo_face + E.Dint / 2 - 15, vao, 30, 30, 'ferragem', 'x', 0, -1, { aberto: visivel }))
-          qtdVarao++
-          const livre = yr - inf.yBot
-          if (livre < 800) aviso(res, 'aviso', `Cabideiro com apenas ${fmtCm(livre)} cm livres: roupa curta precisa de pelo menos 90 cm (vestidos longos, 140 cm).`)
-        }
-        if (visivel) res.abertos.push({ x: E.col_x[k], y: inf.yBot, w: vao, h: inf.hi })
+      if (s.cabideiro) {
+        const yr = r.y + r.h - 95
+        B.push(bloco('Varão cabideiro', 'cabideiro', r.x, yr, E.z_fundo_face + E.Dint / 2 - 15, vao, 30, 30, 'ferragem', 'x', 0, -1, { aberto: visivel }))
+        qtdVarao++
+        const livre = yr - r.y
+        add('Varão do cabideiro', 1, vao, 30, 30)
+        if (livre < 800) aviso(res, 'aviso', `Cabideiro com apenas ${fmtCm(livre)} cm livres: roupa curta precisa de pelo menos 90 cm (vestidos longos, 140 cm).`)
       }
+      if (visivel) res.abertos.push({ x: r.x, y: r.y, w: r.w, h: r.h })
+    }
+  }
 
-      // --- prateleira fixa (divisória horizontal) entre esta seção e a seguinte ---
-      const next = infos[k][si + 1]
-      if (next) {
-        const idb = addPeca(res, peca(p, 'Prateleira fixa', 1, vao, E.Dint, 1, 0))
-        const semFrente = !inf.frente && !next.frente
-        B.push(bloco('Prateleira fixa', 'prateleira', E.col_x[k], next.yTop, E.frontZ0 - E.Dint, vao, e, E.Dint, 'estrutura', 'x', idb, -1,
-          { aberto: !correr && (semFrente || !sobreposta) }))
-      }
-    })
-  })
-
-  // gavetas por coluna (cotas e totais) – quando não há gavetas, as listas ficam vazias
-  // (os slots de cada coluna foram registrados na construção das gavetas)
-
-  // ---- portas de correr ------------------------------------------------------------------------------------------------------
+  // ---- portas de correr ---------------------------------------------------------------------------------------------------------------------------
   if (correr) {
     const n = Math.floor(p.porta_correr)
     const sobre = 40
     const w = (E.L + (n - 1) * sobre) / n
     const yb = E.y0 + E.rod + 10
     const altura = E.topo_lat - yb - 10
-    const qd = 0
-    const id = addPeca(res, { nome: 'Porta de correr', qtd: n, comp: r3(altura), larg: r3(w), esp: p.frente_esp,
-      material: p.frente_material, padrao: p.frente_padrao, fita_c: 2, fita_l: 2, veio: true, obs: 'trilho duplo' })
-    const algumEsp = cols.some(cl => cl.secoes.some(s => s.espelho))
+    const id = addPeca(res, { nome: 'Porta de correr', qtd: n, comp: r3(altura), larg: r3(w), esp: p.frente_esp, material: p.frente_material,
+      padrao: p.frente_padrao, fita_c: 2, fita_l: 2, veio: true, obs: 'trilho duplo' })
+    const algumEsp = folhas.some(f => f.no.espelho)
     for (let i = 0; i < n; i++) {
       const x = i * (w - sobre)
       const z = i % 2 === 0 ? E.P - fe : E.P - 2 * fe - 4
@@ -249,10 +234,9 @@ export function calcularModular(p: Projeto, cat: Catalogo, fo: Folgas, res: Resu
     res.definicoes.push(`Portas de correr: ${n} portas em trilho duplo, com sobreposição de ${fmtCm(sobre)} cm entre elas.`)
     res.medidas.porta_correr = { n, larg: w, alt: altura }
     Object.assign(portaInfo, { larg: w, alt: altura, lado: 'esq', dobradicas_por_porta: 0 })
-    void qd
   }
 
-  // ---- ferragens ----------------------------------------------------------------------------------------------------------------
+  // ---- ferragens ----------------------------------------------------------------------------------------------------------------------------------------
   if (corr) {
     res.ferragens.push({ nome: corr.cor.nome, qtd: totalGavetas, unidade: 'par', categoria: 'corrediça', detalhe: `${corr.comp} mm` })
     res.definicoes.push(`Caixa da gaveta: ${caixaInfo.larg} mm de largura (vão − 2 × ${fmtNum(corr.lat, 1)} mm de corrediça, arredondado para baixo).`)
@@ -275,21 +259,26 @@ export function calcularModular(p: Projeto, cat: Catalogo, fo: Folgas, res: Resu
   }
   descricoes(p, cat, res, E, correr, sobreposta, !!corr, g, c)
 
-  // ---- medidas e cotas --------------------------------------------------------------------------------------------------------------
-  Object.assign(res.medidas, { L: E.L, H: E.H, Hm: E.Hm, P: E.P, e, y0: E.y0, rod: E.rod, Hi: E.Hi, vaos: E.vaos, vao: E.vaos[0],
-    col_x: E.col_x, colunas: nc, Dlat: E.Dlat, Dint: E.Dint, topo_lat: E.topo_lat, ybase_int: E.ybase_int, ytop_int: E.ytop_int,
-    z_lat0: E.z_lat0, zEnd: E.zEnd, elev: E.elev, vaos_gaveta: vaosGaveta, caixa: caixaInfo.larg ? caixaInfo : undefined,
-    n_gavetas: totalGavetas, n_portas: nPortas, porta: portaInfo.larg ? portaInfo : undefined, sobreposta: sobreposta || correr, correr })
+  // ---- medidas ------------------------------------------------------------------------------------------------------------------------------------------------
+  const yMin = Math.min(...folhas.map(f => f.rect.y))
+  const baixo = folhas.filter(f => Math.abs(f.rect.y - yMin) < 1).sort((a, b) => a.rect.x - b.rect.x)
+  const vaos = baixo.map(f => f.rect.w)
+  Object.assign(res.medidas, { L: E.L, H: E.H, Hm: E.Hm, P: E.P, e, y0: E.y0, rod: E.rod, Hi: E.Hi, vaos, vao: vaos[0], colunas: vaos.length,
+    Dlat: E.Dlat, Dint: E.Dint, topo_lat: E.topo_lat, ybase_int: E.ybase_int, ytop_int: E.ytop_int, z_lat0: E.z_lat0, zEnd: E.zEnd, elev: E.elev,
+    vaos_gaveta: vaosGaveta, caixa: caixaInfo.larg ? caixaInfo : undefined, n_gavetas: totalGavetas, n_portas: nPortas,
+    porta: portaInfo.larg ? portaInfo : undefined, sobreposta: sobreposta || correr, correr, n_folhas: folhas.length,
+    largura_util: E.L - 2 * e, frente_esp: fe })
+  res.layout = { folhas: infos, divisores: infoDiv, interior }
   if (algumaGaveta && corr) res.detalhe = 'caixa'
   else if (portaInfo.larg) res.detalhe = 'porta'
-  void algumaPorta; void dobradicaQtd; void idxPorta
   res.vistas = ['frontal', 'lateral', 'interna', ...(algumaGaveta ? ['interna_gavetas' as const] : []), 'detalhe', '3d', 'explodida']
-  cotasModular(res, E, cols, infos, frontX, sobreposta, correr, slotsCol, frentesCol0, g)
-  conferencias(res, E, cols, infos, g, vaosGaveta)
+  cotasModular(res, E, infos, correr, g)
+  conferencias(res, E, infos, g)
+  void idxPorta
 }
 
-// ---- estrutura ------------------------------------------------------------------------------------------------------------------------------
-function estrutura(p: Projeto, fo: Folgas, res: Resultado, cols: Coluna[], correr: boolean): Estrutura {
+// ---- estrutura (tampo, laterais, base, rodapé/pés, fundo) --------------------------------------------------------------------------------------------------
+function estrutura(p: Projeto, fo: Folgas, res: Resultado, correr: boolean): Estrutura {
   const L = p.largura * 10, Hm = p.altura * 10, P = p.profundidade * 10
   const elev = Math.max(0, p.elevacao) * 10
   const H = Hm + elev
@@ -310,30 +299,7 @@ function estrutura(p: Projeto, fo: Folgas, res: Resultado, cols: Coluna[], corre
   const Dlat = zEnd - z_lat0
   const z_fundo_face = z_lat0 + (rasgo ? dist + f : 0)
   const Dint = frontZ0 - z_fundo_face
-
-  // larguras dos vãos
-  const nc = cols.length
-  const util = L - 2 * e - (nc - 1) * e
-  const fixos = cols.map(c => (c.largura > 0 ? c.largura * 10 : 0))
-  let somaFix = fixos.reduce((a, b) => a + b, 0)
-  const nLivres = fixos.filter(v => v <= 0).length
-  if (somaFix > util - nLivres * 100 && somaFix > 0) {
-    aviso(res, 'aviso', 'Larguras das colunas ajustadas para caber na largura do móvel.')
-    const fator = (util - nLivres * 200) / somaFix
-    for (let i = 0; i < fixos.length; i++) fixos[i] *= Math.max(fator, 0.2)
-    somaFix = fixos.reduce((a, b) => a + b, 0)
-  } else if (nLivres === 0 && Math.abs(somaFix - util) > 0.5) {
-    aviso(res, 'aviso', `Larguras das colunas somam ${fmtCm(somaFix)} cm e o espaço útil é ${fmtCm(util)} cm: ajustadas proporcionalmente.`)
-    for (let i = 0; i < fixos.length; i++) fixos[i] *= util / somaFix
-  }
-  const livreW = nLivres ? Math.max(util - somaFix, 0) / nLivres : 0
-  const vaos = fixos.map(v => (v > 0 ? v : livreW))
-  const col_x: number[] = []
-  let x = e
-  for (const v of vaos) { col_x.push(x); x += v + e }
-
-  const E: Estrutura = { L, H, Hm, P, e, f, fe, y0, rod, elev, topo_lat, ytop_int, ybase_int, Hi, z_lat0, zEnd, Dlat, Dint, frontZ0,
-    z_fundo_face, vaos, col_x, rasgo, r, s, dist }
+  const E: Estrutura = { L, H, Hm, P, e, f, fe, y0, rod, elev, topo_lat, ytop_int, ybase_int, Hi, z_lat0, zEnd, Dlat, Dint, frontZ0, z_fundo_face, rasgo, r, s, dist }
   const B = res.blocos
 
   if (p.tampo === 'sobreposto') {
@@ -349,7 +315,6 @@ function estrutura(p: Projeto, fo: Folgas, res: Resultado, cols: Coluna[], corre
   B.push(bloco('Lateral direita', 'lateral', L - e, y0, z_lat0, e, alt_lat, Dlat, 'estrutura', 'y', id))
   id = addPeca(res, peca(p, 'Base', 1, L - 2 * e, Dlat, 1, 0))
   B.push(bloco('Base', 'base', e, y0 + rod, z_lat0, L - 2 * e, e, Dlat, 'estrutura', 'x', id))
-
   if (rod > 0) {
     const recuo = fo.valor('recuo_rodape')
     let z2 = P - recuo, z1 = z2 - e
@@ -365,16 +330,7 @@ function estrutura(p: Projeto, fo: Folgas, res: Resultado, cols: Coluna[], corre
     const zs = [z_lat0 + 20, z_lat0 + Dlat - 20 - tam]
     const grupo = p.base_tipo === 'pes' ? 'pe' : 'rodizio'
     for (const z of zs) for (const xx of xs) B.push(bloco(grupo === 'pe' ? 'Pé' : 'Rodízio', grupo, xx, elev, z, tam, pes, tam, 'ferragem'))
-    res.ferragens.push({ nome: grupo === 'pe' ? 'Pé regulável' : 'Rodízio com trava', qtd: n, unidade: 'un', categoria: 'base',
-      detalhe: `altura ${fmtCm(pes)} cm`, chave: grupo })
-  }
-  if (nc > 1) {
-    const z1 = z_fundo_face
-    const larg_div = z_lat0 + Dlat - z1
-    id = addPeca(res, peca(p, 'Divisória', nc - 1, Hi, larg_div, 1, 0))
-    for (let k = 0; k < nc - 1; k++) {
-      B.push(bloco(`Divisória ${k + 1}`, 'divisoria', col_x[k] + vaos[k], ybase_int, z1, e, Hi, larg_div, 'estrutura', 'y', id))
-    }
+    res.ferragens.push({ nome: grupo === 'pe' ? 'Pé regulável' : 'Rodízio com trava', qtd: n, unidade: 'un', categoria: 'base', detalhe: `altura ${fmtCm(pes)} cm`, chave: grupo })
   }
   if (rasgo) {
     const w = L - 2 * e + 2 * (r - s), h = Hi + 2 * (r - s)
@@ -388,9 +344,8 @@ function estrutura(p: Projeto, fo: Folgas, res: Resultado, cols: Coluna[], corre
   return E
 }
 
-// ---- textos (definições e conferências) ---------------------------------------------------------------------------------------------------------
-function descricoes(p: Projeto, cat: Catalogo, res: Resultado, E: Estrutura, correr: boolean, sobreposta: boolean, temGaveta: boolean,
-  g: number, c: number): void {
+// ---- textos (definições e conferências) ---------------------------------------------------------------------------------------------------------------------------
+function descricoes(p: Projeto, cat: Catalogo, res: Resultado, E: Estrutura, correr: boolean, sobreposta: boolean, temGaveta: boolean, g: number, c: number): void {
   const px = C.puxador(cat, p.puxador)
   const D: string[] = []
   const ptxt: Record<string, string> = {
@@ -413,58 +368,57 @@ function descricoes(p: Projeto, cat: Catalogo, res: Resultado, E: Estrutura, cor
   res.definicoes.unshift(...D)
 }
 
-function conferencias(res: Resultado, E: Estrutura, cols: Coluna[], infos: SecInfo[][], g: number, vaosGaveta: number[]): void {
+function folhasDaLinhaDeBaixo(infos: FolhaInfo[]): FolhaInfo[] {
+  const yMin = Math.min(...infos.map(f => f.rect.y))
+  return infos.filter(f => Math.abs(f.rect.y - yMin) < 1).sort((a, b) => a.rect.x - b.rect.x)
+}
+
+function conferencias(res: Resultado, E: Estrutura, infos: FolhaInfo[], g: number): void {
   const base = E.y0 - E.elev + E.rod
   const baseTxt = E.rod ? `rodapé ${fmtCm(E.rod)}` : base ? `pés ${fmtCm(base)}` : ''
   res.conferencias.push(`Altura: ${baseTxt ? baseTxt + ' + ' : ''}base ${fmtCm(E.e)} + vão ${fmtCm(E.Hi)} + tampo ${fmtCm(E.e)} = ${fmtCm(E.Hm)} cm`)
-  const nc = cols.length
-  const vaosTxt = E.vaos.map(v => fmtCm(v)).join(' + ')
-  res.conferencias.push(`Largura: 2 laterais de ${fmtCm(E.e)}${nc > 1 ? ` + ${nc - 1} divisória(s) de ${fmtCm(E.e)}` : ''} + vãos ${vaosTxt} = ${fmtCm(E.L)} cm`)
-  const gav = infos[0].find(i => i.sec.tipo === 'gavetas')
-  if (gav) {
-    const n = Math.max(1, Math.floor(gav.sec.n))
-    const total = gav.fTop - gav.fBot
-    const h = (total - (n - 1) * g) / n
-    if (!gav.sec.crescente && !(gav.sec.alturas || []).some(v => v > 0)) {
-      res.conferencias.push(`Frentes: ${n} × ${fmtCm(h)} + ${n - 1} folgas de ${fmtCm(g)} = ${fmtCm(total)} cm`)
-    }
+  const linha = folhasDaLinhaDeBaixo(infos)
+  const nDiv = linha.length - 1
+  res.conferencias.push(`Largura: 2 laterais de ${fmtCm(E.e)}${nDiv > 0 ? ` + ${nDiv} divisória(s) de ${fmtCm(E.e)}` : ''} + vãos ${linha.map(f => fmtCm(f.rect.w)).join(' + ')} = ${fmtCm(E.L)} cm`)
+  const gav = infos.filter(f => f.tipo === 'gavetas' && f.frente).sort((a, b) => a.rect.x - b.rect.x)[0]
+  if (gav && gav.frente) {
+    const n = Math.max(1, gav.n)
+    const h = (gav.frente.h - (n - 1) * g) / n
+    const iguais = new Set(gav.itens.filter(i => i.rotulo.startsWith('Frente')).map(i => Math.round(i.h * 100))).size === 1
+    if (iguais) res.conferencias.push(`Frentes: ${n} × ${fmtCm(h)} + ${n - 1} folgas de ${fmtCm(g)} = ${fmtCm(gav.frente.h)} cm`)
   }
-  void vaosGaveta
 }
 
-// ---- cotas -------------------------------------------------------------------------------------------------------------------------------------------
-function cotasModular(res: Resultado, E: Estrutura, cols: Coluna[], infos: SecInfo[][], frontX: [number, number][], sobreposta: boolean,
-  correr: boolean, slotsCol: { y1: number; y2: number }[][], frentesCol0: { y: number; h: number }[], g: number): void {
-  const nc = cols.length
+// ---- cotas ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+function cotasModular(res: Resultado, E: Estrutura, infos: FolhaInfo[], correr: boolean, g: number): void {
   const F: Cota[] = []
-  // largura: nível 1 = frentes (portas ou coluna), nível 2 = total
+  const linha = folhasDaLinhaDeBaixo(infos)
+  // largura: nível 1 = portas ou frentes da linha de baixo, nível 2 = total
   if (correr) {
     const pc = res.medidas.porta_correr
     if (pc) { const passo = pc.larg - 40; for (let i = 0; i < pc.n; i++) F.push({ t: 'h', a: i * passo, b: i * passo + pc.larg, nivel: 1, lado: true }) }
   } else {
-    cols.forEach((_, k) => {
-      const porta = res.blocos.filter(b => b.grupo === 'porta' && b.x >= frontX[k][0] - 1 && b.x + b.dx <= frontX[k][1] + 1)
-      const topos = porta.length ? porta.filter(b => Math.abs(b.y - porta[0].y) < 1) : []
-      if (topos.length > 1) topos.forEach(b => F.push({ t: 'h', a: b.x, b: b.x + b.dx, nivel: 1, lado: true }))
-      else F.push({ t: 'h', a: frontX[k][0], b: frontX[k][1], nivel: 1, lado: true })
-    })
+    for (const f of linha) {
+      const fx = f.frente ?? { x: f.rect.x, y: 0, w: f.rect.w, h: 0 }
+      const portas = f.tipo === 'portas' ? res.blocos.filter(b => b.grupo === 'porta' && b.x >= fx.x - 1 && b.x + b.dx <= fx.x + fx.w + 1 && Math.abs(b.y - (f.frente?.y ?? 0)) < 2) : []
+      if (portas.length > 1) portas.forEach(b => F.push({ t: 'h', a: b.x, b: b.x + b.dx, nivel: 1, lado: true }))
+      else F.push({ t: 'h', a: fx.x, b: fx.x + fx.w, nivel: 1, lado: true })
+    }
   }
   F.push({ t: 'h', a: 0, b: E.L, nivel: 2, lado: true })
-  // alturas à esquerda (coluna 1)
-  const col0 = infos[0]
+  // alturas à esquerda: vãos da coluna da esquerda
+  const esquerda = infos.filter(f => f.rect.x <= E.e + 1).sort((a, b) => b.rect.y - a.rect.y)
   if (correr) {
     const pc = res.medidas.porta_correr
     if (pc) F.push({ t: 'v', a: E.y0 + E.rod + 10, b: E.y0 + E.rod + 10 + pc.alt, nivel: 1, lado: true })
   } else {
-    col0.forEach(inf => {
-      if (inf.sec.tipo === 'gavetas') {
-        const n = Math.max(1, Math.floor(inf.sec.n))
-        const fs = res.blocos.filter(b => b.grupo === 'frente' && b.x >= frontX[0][0] - 1 && b.x < frontX[0][0] + 5 && b.y >= inf.fBot - 1 && b.y + b.dy <= inf.fTop + 1)
+    for (const f of esquerda) {
+      if (f.tipo === 'gavetas' && f.frente) {
+        const fs = res.blocos.filter(b => b.grupo === 'frente' && b.x >= f.frente!.x - 1 && b.x < f.frente!.x + 5 && b.y >= f.frente!.y - 1 && b.y + b.dy <= f.frente!.y + f.frente!.h + 1)
         fs.forEach(b => F.push({ t: 'v', a: b.y, b: b.y + b.dy, nivel: 1, lado: true }))
-        void n
-      } else if (inf.sec.tipo === 'portas') F.push({ t: 'v', a: inf.fBot, b: inf.fTop, nivel: 1, lado: true })
-      else F.push({ t: 'v', a: inf.yBot, b: inf.yTop, nivel: 1, lado: true })
-    })
+      } else if (f.frente) F.push({ t: 'v', a: f.frente.y, b: f.frente.y + f.frente.h, nivel: 1, lado: true })
+      else F.push({ t: 'v', a: f.rect.y, b: f.rect.y + f.rect.h, nivel: 1, lado: true })
+    }
   }
   F.push({ t: 'v', a: E.elev, b: E.H, nivel: 2, lado: true })
   const baseH = E.y0 - E.elev + E.rod
@@ -473,45 +427,35 @@ function cotasModular(res: Resultado, E: Estrutura, cols: Coluna[], infos: SecIn
   F.push({ t: 'v', a: 0, b: E.H, nivel: E.elev > 0 || baseH > 0 ? 2 : 1, lado: false })
   res.cotas.frontal = F
 
-  // lateral
   const Lt: Cota[] = [{ t: 'h', a: E.z_lat0, b: E.z_lat0 + E.Dlat, nivel: 1, lado: true }, { t: 'h', a: 0, b: E.P, nivel: 2, lado: true },
     { t: 'v', a: 0, b: E.H, nivel: 1, lado: false }]
   if (E.elev > 0) Lt.push({ t: 'v', a: 0, b: E.elev, nivel: 1, lado: true })
   else if (baseH > 0) Lt.push({ t: 'v', a: 0, b: baseH, nivel: 1, lado: true })
   res.cotas.lateral = Lt
 
-  // interna (com e sem gavetas)
-  const I: Cota[] = []
-  cols.forEach((_, k) => I.push({ t: 'h', a: E.col_x[k], b: E.col_x[k] + E.vaos[k], nivel: 1, lado: true }))
+  const I: Cota[] = linha.map(f => ({ t: 'h', a: f.rect.x, b: f.rect.x + f.rect.w, nivel: 1, lado: true } as Cota))
   const I2 = [...I]
   const temCaixa = !!res.medidas.caixa
   I.push({ t: 'h', a: 0, b: E.L, nivel: 2, lado: true })
   if (temCaixa) {
-    // caixas: uma cota por coluna que tenha gavetas
-    cols.forEach((cl, k) => {
-      if (cl.secoes.some(s => s.tipo === 'gavetas')) {
+    for (const f of linha) {
+      if (f.tipo === 'gavetas') {
         const w = res.medidas.caixa.larg
-        const xc = E.col_x[k] + (E.vaos[k] - w) / 2
+        const xc = f.rect.x + (f.rect.w - w) / 2
         I2.push({ t: 'h', a: xc, b: xc + w, nivel: 2, lado: true })
       }
-    })
+    }
     I2.push({ t: 'h', a: 0, b: E.L, nivel: 3, lado: true })
   } else I2.push({ t: 'h', a: 0, b: E.L, nivel: 2, lado: true })
   const alturas: Cota[] = []
-  infos[0].forEach(inf => {
-    if (inf.sec.tipo === 'gavetas') {
-      const n = Math.max(1, Math.floor(inf.sec.n))
-      const fixos = (inf.sec.alturas || []).map(v => v * 10)
-      const pesos = pesosGavetas(inf.sec.crescente, n)
-      const total = inf.fTop - inf.fBot - (n - 1) * g
-      const altF = distribuir(total, n, pesos, fixos)
-      const soma = altF.reduce((a, b) => a + b, 0)
-      let y = inf.yTop
-      altF.forEach(hf => { const s = (hf * inf.hi) / soma; alturas.push({ t: 'v', a: y - s, b: y, nivel: 1, lado: true, ref: 0 }); y -= s })
-    } else alturas.push({ t: 'v', a: inf.yBot, b: inf.yTop, nivel: 1, lado: true, ref: 0 })
-  })
+  for (const f of esquerda) {
+    if (f.tipo === 'gavetas' && f.slots.length) f.slots.forEach(s => alturas.push({ t: 'v', a: s.y1, b: s.y2, nivel: 1, lado: true, ref: 0 }))
+    else alturas.push({ t: 'v', a: f.rect.y, b: f.rect.y + f.rect.h, nivel: 1, lado: true, ref: 0 })
+  }
   const resto: Cota[] = [{ t: 'v', a: E.ybase_int, b: E.ytop_int, nivel: 2, lado: true }, { t: 'v', a: E.elev, b: E.H, nivel: 1, lado: false }]
   res.cotas.interna = [...I, ...alturas, ...resto]
   res.cotas.interna_gavetas = [...I2, ...alturas, ...resto]
-  void nc; void slotsCol; void frentesCol0
+  void g
 }
+export { folhasDe, repartir, ehDivisao }
+export type { ItemMedida, DivisorR }

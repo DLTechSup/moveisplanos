@@ -4,23 +4,28 @@ import type { Calculo } from '../core/calculo'
 import { DEFINICOES } from '../core/folgas'
 import { porId } from '../core/presets'
 import type { CamaCfg, Catalogo, Extra, MesaCfg, Projeto } from '../core/tipos'
-import { Construtor } from './Construtor'
+import { PainelItem } from './PainelItem'
+import type { EditarLayout } from './Editor'
+import type { Caminho } from '../core/layout'
 import { CampoCor, CampoMaterial, Grupo, Inteiro, Linha, Num, Select } from './campos'
 
 interface Props {
   p: Projeto; catalogo: Catalogo; calc: Calculo
   set: (patch: Partial<Projeto>) => void
   novaCor: (nome: string, cor: string) => void
+  selecao: Caminho | null; setSelecao: (c: Caminho | null) => void; editarLayout: EditarLayout
   abrirGaleria: () => void; abrirPrecos: () => void
 }
 
-export function Formulario({ p, catalogo, calc, set, novaCor, abrirGaleria, abrirPrecos }: Props) {
+export function Formulario({ p, catalogo, calc, set, novaCor, selecao, setSelecao, editarLayout, abrirGaleria, abrirPrecos }: Props) {
   const folgas = calc.resultado.folgas
   const nomes = (s: 'puxadores' | 'corredicas' | 'fitas' | 'dobradicas') => C.nomes(catalogo, s).map(n => [n, n] as [string, string])
   const cor = (v: string, k: keyof Projeto) => <CampoCor valor={v} catalogo={catalogo} onChange={n => set({ [k]: n } as any)} onNovaCor={novaCor} />
   const modular = p.familia === 'modular', mesa = p.familia === 'mesa', cama = p.familia === 'cama'
-  const temGavetas = calc.resultado.medidas.n_gavetas > 0 || (modular && p.colunas.some(c => c.secoes.some(s => s.tipo === 'gavetas')))
-  const temPortas = modular && p.colunas.some(c => c.secoes.some(s => s.tipo === 'portas'))
+  const folhas = calc.resultado.layout?.folhas ?? []
+  const temGavetas = calc.resultado.medidas.n_gavetas > 0 || (modular && folhas.some(f => f.tipo === 'gavetas'))
+  const temPortas = modular && folhas.some(f => f.tipo === 'portas')
+  const mm = calc.resultado.medidas
   const setExtra = (i: number, patch: Partial<Extra>) => set({ extras: p.extras.map((e, k) => (k === i ? { ...e, ...patch } : e)) })
   const setMesa = (patch: Partial<MesaCfg>) => set({ mesa: { ...p.mesa, ...patch } })
   const setCama = (patch: Partial<CamaCfg>) => set({ cama: { ...p.cama, ...patch } })
@@ -51,17 +56,24 @@ export function Formulario({ p, catalogo, calc, set, novaCor, abrirGaleria, abri
       </Grupo>
 
       {!cama && (
-        <Grupo titulo="Medidas externas">
+        <Grupo titulo="Medidas do móvel">
+          <div className="sub-medidas">Externas (parte de fora)</div>
           <Linha rotulo={mesa && p.mesa.formato === 'redonda' ? 'Diâmetro' : 'Largura'}><Num valor={p.largura} min={10} max={700} sufixo="cm" onChange={v => set({ largura: v, ...(mesa && p.mesa.formato === 'redonda' ? { profundidade: v } : {}) })} /></Linha>
           <Linha rotulo="Altura"><Num valor={p.altura} min={5} max={320} sufixo="cm" onChange={v => set({ altura: v })} /></Linha>
           {!(mesa && p.mesa.formato === 'redonda') && <Linha rotulo="Profundidade"><Num valor={p.profundidade} min={5} max={160} sufixo="cm" onChange={v => set({ profundidade: v })} /></Linha>}
           {modular && <Linha rotulo="Altura do chão" dica="Para móveis suspensos na parede (aéreos, racks, criados)"><Num valor={p.elevacao} max={250} sufixo="cm" onChange={v => set({ elevacao: v })} /></Linha>}
+          {modular && mm.Hi != null && <>
+            <div className="sub-medidas">Internas (úteis) — calculadas; edite aqui se preferir partir do vão</div>
+            <Linha rotulo="Largura interna" dica="Entre as laterais. Editar muda a largura externa."><Num valor={mm.largura_util / 10} min={5} max={700} sufixo="cm" onChange={v => set({ largura: v + (2 * mm.e) / 10 })} /></Linha>
+            <Linha rotulo="Altura interna" dica="Do topo da base à parte de baixo do tampo. Editar muda a altura externa."><Num valor={mm.Hi / 10} min={5} max={320} sufixo="cm" onChange={v => set({ altura: p.altura + (v - mm.Hi / 10) })} /></Linha>
+            <Linha rotulo="Profundidade útil" dica="Até a frente das gavetas/portas. Editar muda a profundidade externa."><Num valor={mm.Dint / 10} min={5} max={160} sufixo="cm" onChange={v => set({ profundidade: p.profundidade + (v - mm.Dint / 10) })} /></Linha>
+          </>}
         </Grupo>
       )}
 
       {modular && (
-        <Grupo titulo="Montagem (colunas, portas e gavetas)">
-          <Construtor p={p} calc={calc} set={set} />
+        <Grupo titulo="Vão selecionado (medidas e opções)">
+          <PainelItem calc={calc} selecao={selecao} setSelecao={setSelecao} editarLayout={editarLayout} />
         </Grupo>
       )}
       {modular && (

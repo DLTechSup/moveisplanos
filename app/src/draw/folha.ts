@@ -17,7 +17,7 @@ export const LW = 4200, LH = 2970            // paisagem (vistas avulsas)
 const M = 60
 const TINTA = '#222222', CINZA = '#5d6b7a', AZUL = '#1b4a7a'
 
-export interface Pagina { titulo: string; svg: () => string }
+export interface Pagina { titulo: string; svg: () => string; retrato: boolean }
 export interface OpcoesExport {
   materiais: boolean                 // incluir a folha "Relação de materiais e valores"
   chapas: boolean                    // incluir o plano de chapas (corte otimizado)
@@ -404,7 +404,7 @@ function paginasChapas(calc: Calculo, primeiro: number, total: number): Pagina[]
   for (let k = 0; k < itens.length; k += 6) {
     const grupo = itens.slice(k, k + 6)
     const n = primeiro + pgs.length
-    pgs.push({ titulo: `Plano de chapas ${pgs.length + 1}`, svg: () => {
+    pgs.push({ titulo: `Plano de chapas ${pgs.length + 1}`, retrato: true, svg: () => {
       const out: Saida = []
       cabecalho(out, calc, `Plano de chapas (corte otimizado) — folha ${n}/${total}`)
       const topo = 360
@@ -429,8 +429,8 @@ export function montarPaginas(calc: Calculo, opc: OpcoesExport = OPCOES_PADRAO):
   const nChapas = opc.chapas ? paginasChapas(calc, 0, 0).length : 0
   const temMateriais = opc.materiais || restantes.length > 0
   const total = 1 + (temMateriais ? 1 : 0) + nChapas
-  const pgs: Pagina[] = [{ titulo: 'Folha do projeto', svg: () => folhaProjeto(calc, 1, total, MAX_LINHAS_CORTE) }]
-  if (temMateriais) pgs.push({ titulo: 'Materiais e valores', svg: () => folhaMateriais(calc, opc.materiais ? opc : { ...opc, valores: 'nenhum' }, 2, total, restantes) })
+  const pgs: Pagina[] = [{ titulo: 'Folha do projeto', retrato: true, svg: () => folhaProjeto(calc, 1, total, MAX_LINHAS_CORTE) }]
+  if (temMateriais) pgs.push({ titulo: 'Materiais e valores', retrato: true, svg: () => folhaMateriais(calc, opc.materiais ? opc : { ...opc, valores: 'nenhum' }, 2, total, restantes) })
   if (opc.chapas) pgs.push(...paginasChapas(calc, 2 + (temMateriais ? 1 : 0), total))
   return pgs
 }
@@ -464,3 +464,30 @@ export function paginasChapasPreview(calc: Calculo): Pagina[] {
   return paginasChapas(calc, 3, montarPaginas(calc, { ...OPCOES_PADRAO, chapas: true }).length)
 }
 export { linhaSvg }
+
+// ---- seleção de itens para exportar (cada parte do projeto pode ser salva separadamente) -------------------------------------------------
+export interface ItemExportar { id: string; titulo: string; grupo: 'folha' | 'vista' }
+
+export function itensExportar(calc: Calculo): ItemExportar[] {
+  const v = calc.resultado.vistas
+  const nome = (id: string) => (id === 'detalhe' ? (calc.resultado.detalhe === 'porta' ? 'Porta e dobradiças' : 'Caixa da gaveta') : NOMES_VISTAS[id])
+  return [
+    { id: 'folha1', titulo: 'Folha do projeto (A3 — vistas, medidas, materiais e plano de corte)', grupo: 'folha' },
+    { id: 'folha2', titulo: 'Relação de materiais e valores (A3)', grupo: 'folha' },
+    { id: 'chapas', titulo: 'Plano de chapas (corte otimizado)', grupo: 'folha' },
+    ...v.map(id => ({ id, titulo: nome(id), grupo: 'vista' as const })),
+  ]
+}
+
+/** Monta as folhas pedidas (na ordem recebida). */
+export function paginasSelecionadas(calc: Calculo, ids: string[], opc: OpcoesExport): Pagina[] {
+  const completas = montarPaginas(calc, { ...opc, materiais: true, chapas: false })
+  const saida: Pagina[] = []
+  for (const id of ids) {
+    if (id === 'folha1') saida.push(completas[0])
+    else if (id === 'folha2') saida.push(completas[1] ?? completas[0])
+    else if (id === 'chapas') saida.push(...paginasChapasPreview(calc))
+    else saida.push({ titulo: NOMES_VISTAS[id] ?? id, retrato: false, svg: () => folhaVista(calc, id) })
+  }
+  return saida
+}

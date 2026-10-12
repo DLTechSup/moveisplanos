@@ -18,7 +18,12 @@ export interface Secao {
   espelho: boolean        // portas com espelho
   alturas: number[]       // gavetas: alturas personalizadas das frentes (cm, 0 = auto)
 }
-export interface Coluna { largura: number; secoes: Secao[] }   // largura do vão em cm; 0 = automática
+export interface Coluna { largura: number; secoes: Secao[] }   // (modelo antigo) largura do vão em cm; 0 = automática
+
+/** Divisão do espaço: filhos lado a lado ('v') ou empilhados de cima para baixo ('h'). tam = tamanho fixo em cm (0 = automático). */
+export interface Divisao { dir: 'v' | 'h'; filhos: No[]; tam: number[] }
+export type No = Secao | Divisao
+export const ehDivisao = (n: No): n is Divisao => 'dir' in n
 
 export interface Extra { descricao: string; qtd: number; preco: number }
 
@@ -52,7 +57,7 @@ export interface Projeto {
   tipo: string
   largura: number; altura: number; profundidade: number   // cm
   elevacao: number                                         // cm do chão (móvel suspenso)
-  colunas: Coluna[]
+  layout: No
   porta_correr: number                                     // 0 = portas de abrir; n ≥ 2 = n portas de correr
   estrutura_material: string; estrutura_esp: number; estrutura_padrao: string
   tampo: 'sobreposto' | 'entre_laterais'
@@ -86,10 +91,7 @@ export function projetoPadrao(): Projeto {
     empresa: '', cidade: '', uf: 'SP', condicoes: '',
     familia: 'modular', tipo: 'comoda_6',
     largura: 140, altura: 80, profundidade: 52, elevacao: 0,
-    colunas: [
-      { largura: 0, secoes: [secaoPadrao('gavetas', { n: 3 })] },
-      { largura: 0, secoes: [secaoPadrao('gavetas', { n: 3 })] },
-    ],
+    layout: { dir: 'v', filhos: [secaoPadrao('gavetas', { n: 3 }), secaoPadrao('gavetas', { n: 3 })], tam: [0, 0] },
     porta_correr: 0,
     estrutura_material: 'MDF', estrutura_esp: 15, estrutura_padrao: 'Carvalho claro',
     tampo: 'sobreposto', base_tipo: 'rodape', base_altura: 5,
@@ -143,6 +145,18 @@ export interface FolgaInfo { valor: number; auto: number; travada: boolean; fora
 export interface Cota { t: 'h' | 'v'; a: number; b: number; nivel: number; lado: boolean; texto?: string; ref?: number }
 export interface Regiao { x: number; y: number; w: number; h: number }
 
+export interface ItemMedida { rotulo: string; qtd: number; w: number; h: number; d: number }   // mm
+export interface FolhaInfo {
+  caminho: number[]; tipo: TipoSecao
+  rect: Regiao                 // espaço interno do vão (mm)
+  frente: Regiao | null        // extensão da frente (mm), quando há frente
+  itens: ItemMedida[]          // peças e medidas deste vão
+  n: number                    // gavetas ou portas
+  slots: { y1: number; y2: number }[]
+}
+export interface DivisorInfo { caminho: number[]; indice: number; dir: 'v' | 'h'; rect: Regiao; pai: Regiao }
+export interface LayoutInfo { folhas: FolhaInfo[]; divisores: DivisorInfo[]; interior: Regiao }
+
 export type VistaId = 'frontal' | 'lateral' | 'interna' | 'interna_gavetas' | 'planta' | 'detalhe' | '3d' | 'explodida'
 
 export interface Resultado {
@@ -157,11 +171,12 @@ export interface Resultado {
   cotas: Partial<Record<VistaId, Cota[]>>
   vistas: VistaId[]                      // vistas que fazem sentido para este móvel
   detalhe: 'caixa' | 'porta' | 'nenhum'
+  layout: LayoutInfo | null
 }
 
 export function resultadoVazio(): Resultado {
   return { pecas: [], blocos: [], puxadores: [], ferragens: [], avisos: [], medidas: {}, folgas: {}, caixa_modelo: [],
-    dobradicas: [], definicoes: [], conferencias: [], abertos: [], cotas: {}, vistas: [], detalhe: 'nenhum' }
+    dobradicas: [], definicoes: [], conferencias: [], abertos: [], cotas: {}, vistas: [], detalhe: 'nenhum', layout: null }
 }
 
 export function addPeca(res: Resultado, p: Omit<Peca, 'id'>): number {

@@ -34,3 +34,11 @@ npm run dist:win     # gera o instalador em app/release (no Windows)
 - `src/core`: motor de cálculo (modular, mesa, cama), folgas, catálogo, otimizador, orçamento e preços.
 - `src/draw`: vistas e folhas em SVG (mesmo desenho na tela, no PDF e no PNG).
 - `src/ui`: interface React. `electron/`: janela do aplicativo.
+
+## Editor de montagem (aba "Montagem livre")
+
+- Layout em árvore: qualquer vão (aberto, gavetas, portas, prateleiras…) pode ser encaixado em qualquer lugar de uma coluna, sem criar nova coluna.
+- Arraste itens da paleta até a borda de um vão (centro/esquerda/direita/acima/abaixo) para encaixar; arraste as divisórias para redimensionar; use "mover" para reposicionar.
+- Campos de Largura/Altura/Profundidade do vão selecionado (fixa/auto) e do móvel (medidas externas/internas) — o preview acompanha sem alterar o que já foi digitado.
+- Desfazer/refazer: Ctrl+Z / Ctrl+Y.
+- "Salvar esta vista…" e "Exportar partes…" exportam cada parte (vista explodida, frontal, plano de corte, materiais…) em PDF/PNG/SVG; o projeto sai com todas as medidas alteradas.

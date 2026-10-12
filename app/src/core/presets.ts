@@ -1,4 +1,5 @@
 // Modelos prontos de móveis. Cada modelo é só dados: medidas, colunas/seções (ou configuração de mesa/cama).
+import { colunasParaLayout, clonar as clonarLayout } from './layout'
 import { projetoPadrao, secaoPadrao } from './tipos'
 import type { CamaCfg, Coluna, Familia, MesaCfg, Projeto, Secao } from './tipos'
 
@@ -159,7 +160,7 @@ export const PRESETS: Preset[] = [
 export const CATEGORIAS = [GR, CG, QU, AR, CB, ER, ME, CA, 'Montagem livre']
 export const porId = (id: string) => PRESETS.find(p => p.id === id)
 
-const clonar = <T,>(x: T): T => JSON.parse(JSON.stringify(x))
+const clonar = <T,>(x: T): T => clonarLayout(x)
 
 /** Aplica um modelo ao projeto, mantendo dados do cliente, materiais, cores e ferragens escolhidos. */
 export function aplicarPreset(atual: Projeto, id: string): Projeto {
@@ -173,7 +174,7 @@ export function aplicarPreset(atual: Projeto, id: string): Projeto {
     tampo: 'sobreposto', base_tipo: 'rodape', base_altura: 5, frente_tipo: 'sobrepostas', puxador_posicao: 'centro',
     folgas_travadas: {},
     ...clonar(pr.valores),
-    colunas: clonar(pr.colunas ?? [col(0, Ab())]),
+    layout: colunasParaLayout(clonar(pr.colunas ?? [col(0, Ab())])),
     mesa: { ...base.mesa, ...(atual.mesa ?? {}), ...clonar(pr.mesa ?? {}) },
     cama: { ...base.cama, ...clonar(pr.cama ?? {}) },
   }

@@ -42,8 +42,10 @@ describe('preços', () => {
 describe('arquivos', () => {
   it('abre projeto da versão antiga (colunas numéricas)', () => {
     const p = migrarProjeto({ nome: 'Antigo', motor: 'gavetas', colunas: 2, gavetas_por_coluna: 4, nicho: 15, largura: 100, altura: 80, profundidade: 45 })
-    expect(p.colunas.length).toBe(2)
-    expect(p.colunas[0].secoes.map(s => s.tipo)).toEqual(['aberto', 'gavetas'])
+    const raiz: any = p.layout
+    expect(raiz.dir).toBe('v')
+    expect(raiz.filhos.length).toBe(2)
+    expect(raiz.filhos[0].filhos.map((s: any) => s.tipo)).toEqual(['aberto', 'gavetas'])
     expect(calcularProjeto(p, catalogoPadrao()).resultado.medidas.n_gavetas).toBe(8)
   })
   it('catálogo antigo ganha os itens novos', () => {

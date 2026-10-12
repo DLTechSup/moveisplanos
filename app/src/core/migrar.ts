@@ -1,4 +1,5 @@
 // Abre arquivos .pmv de qualquer versão (inclusive os criados pelas versões anteriores do programa).
+import { colunasParaLayout } from './layout'
 import { projetoPadrao, secaoPadrao, VERSAO_PROJETO } from './tipos'
 import type { Coluna, Projeto } from './tipos'
 
@@ -19,9 +20,12 @@ export function migrarProjeto(dados: any): Projeto {
       secs.push(secaoPadrao('gavetas', { n: dados.gavetas_por_coluna ?? 3, crescente: dados.distribuicao === 'crescente', alturas: dados.alturas_personalizadas ?? [] }))
       colunas = Array.from({ length: nc }, () => ({ largura: 0, secoes: JSON.parse(JSON.stringify(secs)) }))
     }
-    out.colunas = colunas
+    out.layout = colunasParaLayout(colunas)
     out.familia = 'modular'
+  } else if (Array.isArray(dados.colunas)) {
+    out.layout = colunasParaLayout(dados.colunas as Coluna[])
   }
+  delete out.colunas
   out.versao = VERSAO_PROJETO
   out.mesa = { ...base.mesa, ...(dados.mesa ?? {}) }
   out.cama = { ...base.cama, ...(dados.cama ?? {}) }
