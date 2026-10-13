@@ -38,6 +38,10 @@ ipcMain.handle('abrir-externo', (_e, url) => { if (typeof url === 'string' && /^
 ipcMain.handle('licenca-estado', () => licenca.estado(app.getPath('userData')))
 ipcMain.handle('licenca-ativar', (_e, chave) => { const r = licenca.ativar(app.getPath('userData'), chave); return { ok: r.ok, motivo: r.motivo, estado: licenca.estado(app.getPath('userData')) } })
 
+// Sem GPU compatível o 3D roda por software em vez de falhar
+app.commandLine.appendSwitch('ignore-gpu-blocklist')
+app.commandLine.appendSwitch('enable-unsafe-swiftshader')
+
 const unica = app.requestSingleInstanceLock()
 if (!unica) app.quit()
 else {

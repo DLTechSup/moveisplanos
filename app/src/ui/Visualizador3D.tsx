@@ -73,11 +73,15 @@ export function Visualizador3D({ calc }: { calc: Calculo }) {
   const cena = useRef<Cena | null>(null)
   const [abertura, setAbertura] = useState(0)
   const [info, setInfo] = useState('')
+  const [falha, setFalha] = useState('')
   const res = calc.resultado
 
   useEffect(() => {
+    setFalha('')
     const el = host.current!
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+    let renderer: THREE.WebGLRenderer
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }) }
+    catch { setFalha('Não foi possível iniciar o 3D neste computador (WebGL indisponível). Atualize o driver de vídeo ou use as outras abas.'); return }
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio))
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05
@@ -204,6 +208,7 @@ export function Visualizador3D({ calc }: { calc: Calculo }) {
         <span className="dica">{info}</span>
         <button onClick={salvar} title="Salva a imagem atual do 3D, na posição da câmera e com portas/gavetas como estão">Salvar imagem (PNG)</button>
       </div>
+      {falha && <p className="erro-txt" style={{ padding: 16 }}>{falha}</p>}
       <div className="viz3d-cena" ref={host} />
     </div>
   )
