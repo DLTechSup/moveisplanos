@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Calculo } from '../core/calculo'
+import { Visualizador3D } from './Visualizador3D'
 import { NOMES_VISTAS, OPCOES_PADRAO, folhaVista, montarPaginas, paginasChapasPreview } from '../draw/folha'
 
 export function Preview({ calc, editor, onSalvarVista }: { calc: Calculo; editor: React.ReactNode; onSalvarVista: (id: string) => void }) {
@@ -7,6 +8,7 @@ export function Preview({ calc, editor, onSalvarVista }: { calc: Calculo; editor
   const modular = calc.projeto.familia === 'modular'
   const abas: { id: string; titulo: string }[] = [
     ...(modular ? [{ id: 'editor', titulo: '✎ Editor (montar)' }] : []),
+    { id: 'real3d', titulo: '🎬 3D realista (abrir portas)' },
     { id: 'folha1', titulo: 'Folha do projeto' }, { id: 'folha2', titulo: 'Materiais e valores' }, { id: 'chapas', titulo: 'Plano de chapas' },
     ...vistas.map(v => ({ id: v, titulo: v === 'detalhe' ? (calc.resultado.detalhe === 'porta' ? 'Porta' : 'Gaveta') : NOMES_VISTAS[v] })),
   ]
@@ -20,7 +22,7 @@ export function Preview({ calc, editor, onSalvarVista }: { calc: Calculo; editor
   const chapas = useMemo(() => paginasChapasPreview(calc), [calc])
   const retrato = ativa === 'folha1' || ativa === 'folha2' || ativa === 'chapas'
   const svg = useMemo(() => {
-    if (ativa === 'editor') return ''
+    if (ativa === 'editor' || ativa === 'real3d') return ''
     if (ativa === 'folha1') return paginas[0].svg()
     if (ativa === 'folha2') return (paginas[1] ?? montarPaginas(calc, OPCOES_PADRAO)[0]).svg()
     if (ativa === 'chapas') return chapas.length ? chapas[Math.min(pagChapa, chapas.length) - 1].svg() : ''
@@ -55,7 +57,7 @@ export function Preview({ calc, editor, onSalvarVista }: { calc: Calculo; editor
           <button onClick={() => setZoom(z => Math.min(4, z * 1.2))} title="Aumentar">+</button>
         </span>
       </div>
-      {ativa === 'editor' ? <div className="editor-area">{editor}</div> : (
+      {ativa === 'real3d' ? <Visualizador3D calc={calc} /> : ativa === 'editor' ? <div className="editor-area">{editor}</div> : (
         <div className="folha-area" ref={area}>
           <div className={`folha ${retrato ? 'retrato' : ''}`} style={{ width: retrato ? `${78 * zoom}%` : `${zoom * 100}%` }} dangerouslySetInnerHTML={{ __html: svg }} />
         </div>

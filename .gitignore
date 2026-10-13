@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+ferramentas/gerador-licencas/chave-privada.pem
+ferramentas/gerador-licencas/licencas-emitidas.csv

@@ -149,3 +149,16 @@ tr.sem-preco td:first-child b { color: #b45309; } td.n { text-align: right; whit
 .modal.exportar { width: min(620px, 94vw); } .lista-export { max-height: 300px; overflow: auto; border: 1px solid var(--borda); border-radius: 8px; padding: 6px 10px; margin: 8px 0; }
 .linha-fmt { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 6px 0; } .radio { display: block; margin: 5px 0; } .linha-fmt .radio { display: inline-block; margin: 0; }
 .barra button:disabled { opacity: .45; cursor: default; }
+
+/* visualizador 3D realista */
+.viz3d { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.viz3d-barra { display: flex; gap: 12px; align-items: center; padding: 8px 12px; background: #fff; border-bottom: 1px solid #dfe2ea; flex-wrap: wrap; }
+.viz3d-barra .dica { color: #6b7280; font-size: 12px; flex: 1; }
+.viz3d-cena { flex: 1; min-height: 0; position: relative; }
+.viz3d-cena canvas { display: block; width: 100%; height: 100%; }
+
+/* licença */
+.modal.licenca { width: min(520px, 92vw); padding: 22px; }
+.modal.licenca textarea { width: 100%; font: 12px ui-monospace, monospace; box-sizing: border-box; margin-top: 6px; }
+.modal.licenca .acoes { display: flex; gap: 10px; margin-top: 14px; }
+.erro-txt { color: #b42318; }

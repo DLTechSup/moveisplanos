@@ -42,3 +42,7 @@ npm run dist:win     # gera o instalador em app/release (no Windows)
 - Campos de Largura/Altura/Profundidade do vão selecionado (fixa/auto) e do móvel (medidas externas/internas) — o preview acompanha sem alterar o que já foi digitado.
 - Desfazer/refazer: Ctrl+Z / Ctrl+Y.
 - "Salvar esta vista…" e "Exportar partes…" exportam cada parte (vista explodida, frontal, plano de corte, materiais…) em PDF/PNG/SVG; o projeto sai com todas as medidas alteradas.
+
+## 3D realista e licença
+- Aba **3D realista**: luz, sombras, reflexos, madeira texturizada; portas de abrir giram na dobradiça, portas de correr deslizam, gavetas saem. Clique numa peça para abrir só ela; gire com o mouse; "Salvar imagem (PNG)".
+- Licença: ver `ferramentas/gerador-licencas/LEIA-ME.md`.

@@ -1,0 +1,27 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Gerador de licenças — Projeta Móveis</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font:15px system-ui,sans-serif;background:#f3f4f8;color:#1f2937;margin:0;padding:24px}
+main{max-width:640px;margin:auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 12px #0001}
+h1{font-size:20px;margin:0 0 4px}p.s{color:#6b7280;margin:0 0 18px}
+label{display:block;font-weight:600;margin:12px 0 4px}input,select{width:100%;padding:9px;border:1px solid #cbd0da;border-radius:8px;font:inherit;box-sizing:border-box}
+button{margin-top:18px;padding:11px 18px;border:0;border-radius:8px;background:#1e2a5a;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+textarea{width:100%;height:150px;margin-top:14px;font:12px ui-monospace,monospace;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid #cbd0da}
+.erro{color:#b42318;margin-top:12px}small{color:#6b7280}
+</style></head><body><main>
+<h1>Gerador de licenças</h1><p class="s">Cada licença é registrada em <code>licencas-emitidas.csv</code>.</p>
+<label>Nome do cliente *</label><input id="cliente">
+<label>E-mail</label><input id="email" type="email">
+<label>Tipo</label><select id="tipo"><option value="vitalicia">Vitalícia</option><option value="anual">Anual (365 dias)</option><option value="mensal">Mensal (30 dias)</option><option value="teste">Teste (30 dias)</option></select>
+<label>Validade personalizada em dias <small>(opcional)</small></label><input id="dias" type="number" min="1">
+<label>ID da máquina <small>(opcional — prende a licença a um computador; o cliente vê o ID na tela de ativação)</small></label><input id="maquina" placeholder="XXXX-XXXX-XXXX-XXXX">
+<button id="go">Gerar licença</button><div class="erro" id="erro"></div>
+<textarea id="saida" readonly placeholder="A chave aparece aqui. Envie ao cliente."></textarea>
+<button id="copiar" style="background:#2b7a4b">Copiar chave</button>
+<script>
+go.onclick=async()=>{erro.textContent='';saida.value='';
+ const corpo={cliente:cliente.value,email:email.value,tipo:tipo.value,maquina:maquina.value};if(dias.value)corpo.dias=dias.value
+ const r=await fetch('/emitir',{method:'POST',body:JSON.stringify(corpo)});const j=await r.json()
+ if(j.erro)erro.textContent=j.erro;else saida.value=j.chave}
+copiar.onclick=()=>{saida.select();navigator.clipboard.writeText(saida.value)}
+</script></main></body></html>

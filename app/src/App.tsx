@@ -18,6 +18,7 @@ import type { EditarLayout } from './ui/Editor'
 import { Formulario } from './ui/Formulario'
 import { Galeria } from './ui/Galeria'
 import { Preview } from './ui/Preview'
+import { LicencaDialogo, useLicenca } from './ui/Licenca'
 import { PrecosDialogo } from './ui/PrecosDialogo'
 
 const CHAVE_PROJETO = 'projeta-moveis:projeto'
@@ -45,6 +46,7 @@ export default function App() {
   const [catalogo, setCatalogo] = useState<Catalogo>(carregarCatalogo)
   const [galeria, setGaleria] = useState(inicio.novo)
   const [catAberto, setCatAberto] = useState(false)
+  const lic = useLicenca()
   const [precosAberto, setPrecosAberto] = useState(false)
   const [exportando, setExportando] = useState<null | { ids: string[]; formato: FormatoExport }>(null)
   const [opc, setOpc] = useState<OpcoesExport>(OPCOES_PADRAO)
@@ -182,6 +184,11 @@ export default function App() {
         <span className="sep" />
         <button onClick={() => setPrecosAberto(true)}>Preços</button>
         <button onClick={() => setCatAberto(true)} title="Ctrl+K">Catálogo</button>
+        {lic.est && lic.est.estado !== 'dev' && (
+          <button className={lic.est.estado === 'licenciado' ? '' : 'prim'} onClick={lic.abrir}>
+            {lic.est.estado === 'licenciado' ? 'Licença' : lic.est.estado === 'teste' ? `Teste: ${lic.est.dias} dia(s) — Ativar` : 'Ativar'}
+          </button>
+        )}
         <input ref={arquivo} type="file" accept=".pmv,application/json" hidden onChange={e => abrir(e.target.files?.[0])} />
       </header>
 
@@ -196,6 +203,9 @@ export default function App() {
         </section>
       </main>
 
+      {lic.est && lic.est.estado !== 'dev' && (lic.dialogo || lic.est.estado === 'bloqueado') && (
+        <LicencaDialogo est={lic.est} bloqueado={lic.est.estado === 'bloqueado'} onFechar={lic.fechar} onEstado={lic.setEst} />
+      )}
       <footer className={`status ${avisos.length ? (temErro ? 'erro' : 'aviso') : 'ok'}`}>
         <span className="avisos">{avisos.length ? avisos.map(a => a.texto).join('  •  ') : 'Sem avisos.'}</span>
         {msg && <span className="msg">{msg}</span>}

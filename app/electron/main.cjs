@@ -2,6 +2,7 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const fs = require('fs')
 const path = require('path')
+const licenca = require('./licenca.cjs')
 
 let janela = null
 let arquivoPendente = null
@@ -22,7 +23,7 @@ function criarJanela() {
     width: 1560, height: 940, minWidth: 1000, minHeight: 650,
     title: 'Projeta Móveis', backgroundColor: '#f3f4f8',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: !app.isPackaged },
   })
   janela.setMenuBarVisibility(false)
   janela.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' } })
@@ -33,6 +34,9 @@ function criarJanela() {
 }
 
 ipcMain.handle('abrir-externo', (_e, url) => { if (typeof url === 'string' && /^https?:\/\//.test(url)) return shell.openExternal(url) })
+
+ipcMain.handle('licenca-estado', () => licenca.estado(app.getPath('userData')))
+ipcMain.handle('licenca-ativar', (_e, chave) => { const r = licenca.ativar(app.getPath('userData'), chave); return { ok: r.ok, motivo: r.motivo, estado: licenca.estado(app.getPath('userData')) } })
 
 const unica = app.requestSingleInstanceLock()
 if (!unica) app.quit()
