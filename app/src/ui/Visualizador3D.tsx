@@ -10,6 +10,7 @@ import { COR_COLCHAO, COR_ESPELHO, COR_FERRAGEM } from '../draw/comum'
 import { elementos, transformar } from '../draw/cena3d'
 import { textura } from '../draw/texturas'
 import { baixar } from '../exportar'
+import { Visualizador2D } from './Visualizador2D'
 
 const MM = 0.001
 const loader = new THREE.TextureLoader()
@@ -78,10 +79,11 @@ export function Visualizador3D({ calc }: { calc: Calculo }) {
 
   useEffect(() => {
     setFalha('')
-    const el = host.current!
+    const el = host.current
+    if (!el) return
     let renderer: THREE.WebGLRenderer
     try { renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }) }
-    catch { setFalha('Não foi possível iniciar o 3D neste computador (WebGL indisponível). Atualize o driver de vídeo ou use as outras abas.'); return }
+    catch { setFalha('WebGL indisponível neste computador — usando o modo compatível (sem reflexos e sombras realistas). Atualizar o driver de vídeo habilita o 3D realista completo.'); return }
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio))
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05
@@ -200,6 +202,12 @@ export function Visualizador3D({ calc }: { calc: Calculo }) {
     c.renderer.render(c.scene, c.cam)
     c.renderer.domElement.toBlob(b => b && baixar(b, `${calc.projeto.nome || 'projeto'} - imagem 3D.png`), 'image/png')
   }
+  if (falha) return (
+    <div className="viz3d">
+      <p className="dica" style={{ padding: '6px 12px', margin: 0, background: '#fff7e0', color: '#7a5b00', fontSize: 12 }}>{falha}</p>
+      <Visualizador2D calc={calc} />
+    </div>
+  )
   return (
     <div className="viz3d">
       <div className="viz3d-barra">
@@ -208,7 +216,6 @@ export function Visualizador3D({ calc }: { calc: Calculo }) {
         <span className="dica">{info}</span>
         <button onClick={salvar} title="Salva a imagem atual do 3D, na posição da câmera e com portas/gavetas como estão">Salvar imagem (PNG)</button>
       </div>
-      {falha && <p className="erro-txt" style={{ padding: 16 }}>{falha}</p>}
       <div className="viz3d-cena" ref={host} />
     </div>
   )
